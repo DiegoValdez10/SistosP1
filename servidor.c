@@ -1,4 +1,4 @@
-#include <stdio.h>
+	#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -105,7 +105,7 @@ void manejar_solicitud(int client_socket, int option) {
                 printf("Mensaje privado recibido de %s: %s\n", server.clients[sender_index].username, message_text);
             }
             break;
-        case 3: // Cambio de Estado
+	case 3: // Cambio de Estado
             {
                 char status[20];
                 if (recv(client_socket, &status, sizeof(status), 0) <= 0) {
@@ -116,7 +116,8 @@ void manejar_solicitud(int client_socket, int option) {
                 
                 cambiar_estado(client_socket, status);
             }
-            break;
+	    break;
+
         case 4: 
             {
                 enviar_usuarios_conectados(client_socket);
@@ -194,6 +195,7 @@ void enviar_usuarios_conectados(int client_socket) {
     send(client_socket, &count, sizeof(int), 0);
     for (int i = 0; i < server.client_count; i++) {
         send(client_socket, server.clients[i].username, sizeof(server.clients[i].username), 0);
+        send(client_socket, server.clients[i].status, sizeof(server.clients[i].status), 0);
     }
 }
 void enviar_respuesta_simple(int client_socket, const char *message) {
@@ -211,6 +213,7 @@ void cambiar_estado(int client_socket, const char *new_status) {
     }
     pthread_mutex_unlock(&server.mutex);
 }
+
 // Función para enviar un mensaje a un usuario
 void enviar_mensaje(char *recipient_username, char *message, int sender_socket) {
     pthread_mutex_lock(&server.mutex);

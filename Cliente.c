@@ -34,6 +34,7 @@ int main(int argc, char *argv[]) {
 
     char *username = argv[1];
     char *ip = argv[2];
+    char status[20]; // Declarar la variable status
     int port = atoi(argv[3]);
 
     int sock;
@@ -95,41 +96,43 @@ int main(int argc, char *argv[]) {
                 break;
             }
 
-            case 3: {
-                send(sock, &option, sizeof(int), 0);
+	case 3: {
+	    send(sock, &option, sizeof(int), 0);
 
-                printf("Elige un nuevo estado:\n");
-                printf("1. ACTIVO\n");
-                printf("2. OCUPADO\n");
-                printf("3. INACTIVO\n");
-                printf("Ingresa el número de tu nuevo estado: ");
+	    printf("Elige un nuevo estado:\n");
+	    printf("1. ACTIVO\n");
+	    printf("2. OCUPADO\n");
+	    printf("3. INACTIVO\n");
+	    printf("Ingresa el número de tu nuevo estado: ");
 
-                int choice;
-                scanf("%d", &choice);
-                getchar();
+	    int choice;
+	    scanf("%d", &choice);
+	    getchar();
 
-                char *new_status;
-                switch (choice) {
-                    case 1:
-                        new_status = "ACTIVO";
-                        break;
-                    case 2:
-                        new_status = "OCUPADO";
-                        break;
-                    case 3:
-                        new_status = "INACTIVO";
-                        break;
-                    default:
-                        printf("Opción no válida. Selecciona un estado válido.\n");
-                        continue;
-                }
+	    char new_status[20];
+	    switch (choice) {
+		case 1:
+		    strcpy(new_status, "ACTIVO");
+		    break;
+		case 2:
+		    strcpy(new_status, "OCUPADO");
+		    break;
+		case 3:
+		    strcpy(new_status, "INACTIVO");
+		    break;
+		default:
+		    printf("Opción no válida. Selecciona un estado válido.\n");
+		    continue;
+	    }
 
-                send(sock, new_status, strlen(new_status) + 1, 0);
+	    send(sock, new_status, sizeof(new_status), 0);
 
-                option = 5;
-                send(sock, &option, sizeof(int), 0);
-                break;
-            }
+	    char response[BUFFER_SIZE];
+	    recv(sock, response, sizeof(response), 0);
+	    printf("%s\n", response);
+	    break;
+	}
+		break;
 
             case 4:
                 send(sock, &option, sizeof(int), 0);
@@ -139,37 +142,49 @@ int main(int argc, char *argv[]) {
 
                 printf("Connected users:\n");
                 for (int i = 0; i < num_users; i++) {
-                    UserInfo user_info;
-                    recv(sock, &user_info, sizeof(UserInfo), 0);
-                    printf("- Username: %s | Status: %s\n", user_info.username, user_info.status);
+                    char username [50];
+                    char status [20];
+		    recv(sock, username, sizeof(username), 0);
+		    recv(sock, status, sizeof(status), 0);
+                    printf("- Username: %s | Status: %s\n", username, status);
                 }
                 break;
 
-            case 5: {
-                send(sock, &option, sizeof(int), 0);
+	case 5: {
+	    send(sock, &option, sizeof(int), 0);
 
-                char target_username[MAX_USERNAME_LENGTH];
-                printf("Enter username to get information: ");
-                fgets(target_username, MAX_USERNAME_LENGTH, stdin);
-                target_username[strcspn(target_username, "\n")] = '\0';
-                send(sock, target_username, strlen(target_username), 0);
+	    char target_username[MAX_USERNAME_LENGTH];
+	    printf("Enter username to get information: ");
+	    fgets(target_username, MAX_USERNAME_LENGTH, stdin);
+	    target_username[strcspn(target_username, "\n")] = '\0';
+	    send(sock, target_username, strlen(target_username), 0);
 
-                int user_found;
-                recv(sock, &user_found, sizeof(int), 0);
+	    int user_found;
+	    recv(sock, &user_found, sizeof(int), 0);
 
-                if (user_found) {
-                    UserInfo user_info;
-                    recv(sock, &user_info, sizeof(UserInfo), 0);
+	    if (user_found) {
+		UserInfo user_info;
+		recv(sock, &user_info.username, sizeof(user_info.username), 0);
+		recv(sock, &user_info.ip, sizeof(user_info.ip), 0);
+		recv(sock, &user_info.status, sizeof(user_info.status), 0);
 
-                    printf("User info:\n");
-                    printf("- Username: %s\n", user_info.username);
-                    printf("- IP: %s\n", user_info.ip);
-                    printf("- Status: %s\n", user_info.status);
-                } else {
-                    printf("User not found.\n");
-                }
-                break;
-            }
+		printf("User info:\n");
+		printf("- Username: %s\n", user_info.username);
+		printf("- IP: %s\n", user_info.ip);
+		printf("- Status: %s\n", user_info.status);
+
+		// Actualizar la información del usuario local si el nombre de usuario coincide
+		if (strcmp(user_info.username, argv[1]) == 0) {
+		    strcpy(argv[1], user_info.username);
+		    strcpy(ip, user_info.ip);
+		    strcpy(status, user_info.status);
+		}
+	    } else {
+		printf("User not found.\n");
+	    }
+	    break;
+	}
+		break;
 
             case 6: {
                 printf("Enter message to broadcast ('quit' to exit): ");
