@@ -1,4 +1,4 @@
-	#include <stdio.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -9,6 +9,7 @@
 #define MAX_CLIENTS 100
 #define BUFFER_SIZE 1024
 #define DEFAULT_PORT 8888
+#define MAX_USERNAME_LENGHT 100
 
 // Estructura para representar a un cliente
 typedef struct {
@@ -27,6 +28,13 @@ typedef struct {
 
 ServerInfo server;
 
+// Arreglo para mapear los descriptores de socket a los índices de la estructura Client
+int client_sockets[MAX_CLIENTS];
+
+// Lista para almacenar mensajes de broadcast
+char broadcast_messages[MAX_CLIENTS][BUFFER_SIZE];
+int broadcast_message_count = 0;
+
 // Prototipos de funciones
 void *manejar_cliente(void *arg);
 void manejar_solicitud(int client_socket, int option);
@@ -37,7 +45,8 @@ void enviar_mensaje(char *recipient_username, char *message, int sender_socket);
 void enviar_info_usuario(int client_socket, char *username);
 void enviar_respuesta(int client_socket, int option, int code, char *message);
 void mensaje_broadcast(char *message, int sender_socket);
-void enviar_respuesta_simple(int client_socket, const char *message); 
+void enviar_respuesta_simple(int client_socket, const char *message);
+void enviar_broadcast_messages(int client_socket);
 
 // Función para manejar las conexiones de los clientes
 void *manejar_cliente(void *arg) {
@@ -105,7 +114,7 @@ void manejar_solicitud(int client_socket, int option) {
                 printf("Mensaje privado recibido de %s: %s\n", server.clients[sender_index].username, message_text);
             }
             break;
-	case 3: // Cambio de Estado
+        case 3: // Cambio de Estado
             {
                 char status[20];
                 if (recv(client_socket, &status, sizeof(status), 0) <= 0) {
@@ -116,9 +125,9 @@ void manejar_solicitud(int client_socket, int option) {
                 
                 cambiar_estado(client_socket, status);
             }
-	    break;
+            break;
 
-        case 4: 
+        case 4: // Listar Usuarios Conectados
             {
                 enviar_usuarios_conectados(client_socket);
             }
@@ -134,16 +143,16 @@ void manejar_solicitud(int client_socket, int option) {
                 enviar_info_usuario(client_socket, username);
             }
             break;
-        case 6:
-           {
-
-                if (recv(client_socket, message, BUFFER_SIZE, 0) <= 0) {
+        case 6: // Mensaje de broadcast
+            {
+                char broadcast_message[BUFFER_SIZE];
+                if (recv(client_socket, broadcast_message, sizeof(broadcast_message), 0) <= 0) {
                     perror("Error receiving broadcast message from client");
                     close(client_socket);
                     pthread_exit(NULL);
                 }
                 
-                mensaje_broadcast(message, client_socket);
+                mensaje_broadcast(broadcast_message, client_socket);
             }
             break;
         default:
@@ -155,6 +164,15 @@ void manejar_solicitud(int client_socket, int option) {
     }
 }
 
+// Función para enviar todos los mensajes de broadcast a un cliente
+void enviar_broadcast_messages(int client_socket) {
+    for (int i = 0; i < broadcast_message_count; i++) {
+        send(client_socket, broadcast_messages[i], strlen(broadcast_messages[i]), 0);
+    }
+    // Enviamos un mensaje especial indicando que se han enviado todos los mensajes de broadcast
+    send(client_socket, "###END_BROADCAST_MESSAGES###", strlen("###END_BROADCAST_MESSAGES###"), 0);
+}
+
 // Función para registrar a un nuevo usuario
 void registrar_usuario(int client_socket, char *username, char *ip) {
     int code;
@@ -164,6 +182,7 @@ void registrar_usuario(int client_socket, char *username, char *ip) {
     pthread_mutex_lock(&server.mutex);
 
     // Verificar si el usuario ya está registrado
+    int index = -1;
     for (int i = 0; i < server.client_count; i++) {
         if (strcmp(server.clients[i].username, username) == 0) {
             code = 500; // Usuario ya registrado
@@ -175,10 +194,12 @@ void registrar_usuario(int client_socket, char *username, char *ip) {
     }
 
     // Registrar al nuevo usuario
-    strcpy(server.clients[server.client_count].username, username);
-    strcpy(server.clients[server.client_count].ip, ip);
-    strcpy(server.clients[server.client_count].status, "ACTIVO");
-    server.clients[server.client_count].socket = client_socket;
+    index = server.client_count;
+    strcpy(server.clients[index].username, username);
+    strcpy(server.clients[index].ip, ip);
+    strcpy(server.clients[index].status, "ACTIVO");
+    server.clients[index].socket = client_socket;
+    client_sockets[index]= client_socket; // Almacenar el descriptor de socket
     server.client_count++;
 
     // Enviar respuesta exitosa al cliente
@@ -198,9 +219,11 @@ void enviar_usuarios_conectados(int client_socket) {
         send(client_socket, server.clients[i].status, sizeof(server.clients[i].status), 0);
     }
 }
+
 void enviar_respuesta_simple(int client_socket, const char *message) {
     send(client_socket, message, strlen(message) + 1, 0); 
 }
+
 // Función para cambiar el estado de un usuario
 void cambiar_estado(int client_socket, const char *new_status) {
     pthread_mutex_lock(&server.mutex);
@@ -219,18 +242,52 @@ void enviar_mensaje(char *recipient_username, char *message, int sender_socket) 
     pthread_mutex_lock(&server.mutex);
 
     int recipient_found = 0;
+    int sender_index = -1;
+    int recipient_index = -1;
+
+    // Buscar el índice del remitente
     for (int i = 0; i < server.client_count; i++) {
-        if (strcmp(server.clients[i].username, recipient_username) == 0) {
-            send(server.clients[i].socket, message, strlen(message), 0);
-            recipient_found = 1;
+        if (server.clients[i].socket == sender_socket) {
+            sender_index = i;
             break;
         }
     }
 
-    if (recipient_found) {
-        printf("Mensaje privado enviado a %s: %s\n", recipient_username, message);
-    } else {
+    if (sender_index == -1) {
+        perror("Error: Sender not found");
+        pthread_mutex_unlock(&server.mutex);
+        return;
+    }
+
+    char sender_username[50];
+    char sender_ip[INET_ADDRSTRLEN];
+    strcpy(sender_username, server.clients[sender_index].username);
+    strcpy(sender_ip, server.clients[sender_index].ip);
+
+    // Buscar el índice del receptor
+    for (int i = 0; i < server.client_count; i++) {
+        if (strcmp(server.clients[i].username, recipient_username) == 0) {
+            recipient_index = i;
+            break;
+        }
+    }
+
+    if (recipient_index == -1) {
         printf("El usuario %s no está conectado.\n", recipient_username);
+        pthread_mutex_unlock(&server.mutex);
+        return;
+    }
+
+    int recipient_socket = client_sockets[recipient_index]; // Obtener el socket del destinatario
+
+    // Enviar el nombre de usuario del remitente y el mensaje al receptor
+    send(recipient_socket, sender_username, strlen(sender_username), 0);
+    send(recipient_socket, message, strlen(message), 0);
+
+    recipient_found = 1;
+
+    if (recipient_found) {
+        printf("Mensaje privado enviado de %s (%s) a %s: %s\n", sender_username, sender_ip, recipient_username, message);
     }
 
     pthread_mutex_unlock(&server.mutex);
@@ -267,11 +324,14 @@ void enviar_respuesta(int client_socket, int option, int code, char *message) {
     send(client_socket, message, strlen(message), 0);
 }
 
-
 void mensaje_broadcast(char *message, int sender_socket) {
     pthread_mutex_lock(&server.mutex);
 
     printf("Mensaje broadcast recibido: %s\n", message);
+
+    // Almacenamos el mensaje de broadcast en la lista
+    strcpy(broadcast_messages[broadcast_message_count], message);
+    broadcast_message_count++;
 
     for (int i = 0; i < server.client_count; i++) {
         if (server.clients[i].socket != sender_socket) {
@@ -281,7 +341,6 @@ void mensaje_broadcast(char *message, int sender_socket) {
 
     pthread_mutex_unlock(&server.mutex);
 }
-
 
 int main(int argc, char *argv[]) {
     int server_socket, client_socket, port;
@@ -340,4 +399,3 @@ int main(int argc, char *argv[]) {
 
     return 0;
 }
-

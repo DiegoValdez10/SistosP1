@@ -26,6 +26,14 @@ void displayMenu() {
     printf("Elige una opción: ");
 }
 
+void displayBroadcastMenu() {
+    printf("\nSubmenú de Chatear grupalmente:\n");
+    printf("1. Ver mensajes de broadcast\n");
+    printf("2. Enviar mensaje al broadcast\n");
+    printf("3. Volver al menú principal\n");
+    printf("Elige una opción: ");
+}
+
 int main(int argc, char *argv[]) {
     if (argc != 4) {
         fprintf(stderr, "Uso: %s <nombredeusuario> <IPdelservidor> <puertodelservidor>\n", argv[0]);
@@ -96,45 +104,44 @@ int main(int argc, char *argv[]) {
                 break;
             }
 
-	case 3: {
-	    send(sock, &option, sizeof(int), 0);
+            case 3: {
+                send(sock, &option, sizeof(int), 0);
 
-	    printf("Elige un nuevo estado:\n");
-	    printf("1. ACTIVO\n");
-	    printf("2. OCUPADO\n");
-	    printf("3. INACTIVO\n");
-	    printf("Ingresa el número de tu nuevo estado: ");
+                printf("Elige un nuevo estado:\n");
+                printf("1. ACTIVO\n");
+                printf("2. OCUPADO\n");
+                printf("3. INACTIVO\n");
+                printf("Ingresa el número de tu nuevo estado: ");
 
-	    int choice;
-	    scanf("%d", &choice);
-	    getchar();
+                int choice;
+                scanf("%d", &choice);
+                getchar();
 
-	    char new_status[20];
-	    switch (choice) {
-		case 1:
-		    strcpy(new_status, "ACTIVO");
-		    break;
-		case 2:
-		    strcpy(new_status, "OCUPADO");
-		    break;
-		case 3:
-		    strcpy(new_status, "INACTIVO");
-		    break;
-		default:
-		    printf("Opción no válida. Selecciona un estado válido.\n");
-		    continue;
-	    }
+                char new_status[20];
+                switch (choice) {
+                    case 1:
+                        strcpy(new_status, "ACTIVO");
+                        break;
+                    case 2:
+                        strcpy(new_status, "OCUPADO");
+                        break;
+                    case 3:
+                        strcpy(new_status, "INACTIVO");
+                        break;
+                    default:
+                        printf("Opción no válida. Selecciona un estado válido.\n");
+                        continue;
+                }
 
-	    send(sock, new_status, sizeof(new_status), 0);
+                send(sock, new_status, sizeof(new_status), 0);
 
-	    char response[BUFFER_SIZE];
-	    recv(sock, response, sizeof(response), 0);
-	    printf("%s\n", response);
-	    break;
-	}
-		break;
+                char response[BUFFER_SIZE];
+                recv(sock, response, sizeof(response), 0);
+                printf("%s\n", response);
+                break;
+            }
 
-            case 4:
+            case 4: {
                 send(sock, &option, sizeof(int), 0);
 
                 int num_users;
@@ -149,55 +156,95 @@ int main(int argc, char *argv[]) {
                     printf("- Username: %s | Status: %s\n", username, status);
                 }
                 break;
+            }
 
-	case 5: {
-	    send(sock, &option, sizeof(int), 0);
+            case 5: {
+                send(sock, &option, sizeof(int), 0);
 
-	    char target_username[MAX_USERNAME_LENGTH];
-	    printf("Enter username to get information: ");
-	    fgets(target_username, MAX_USERNAME_LENGTH, stdin);
-	    target_username[strcspn(target_username, "\n")] = '\0';
-	    send(sock, target_username, strlen(target_username), 0);
+                char target_username[MAX_USERNAME_LENGTH];
+                printf("Enter username to get information: ");
+                fgets(target_username, MAX_USERNAME_LENGTH, stdin);
+                target_username[strcspn(target_username, "\n")] = '\0';
+                send(sock, target_username, strlen(target_username), 0);
 
-	    int user_found;
-	    recv(sock, &user_found, sizeof(int), 0);
+                int user_found;
+                recv(sock, &user_found, sizeof(int), 0);
 
-	    if (user_found) {
-		UserInfo user_info;
-		recv(sock, &user_info.username, sizeof(user_info.username), 0);
-		recv(sock, &user_info.ip, sizeof(user_info.ip), 0);
-		recv(sock, &user_info.status, sizeof(user_info.status), 0);
+                if (user_found) {
+                    UserInfo user_info;
+                    recv(sock, &user_info, sizeof(UserInfo), 0);
 
-		printf("User info:\n");
-		printf("- Username: %s\n", user_info.username);
-		printf("- IP: %s\n", user_info.ip);
-		printf("- Status: %s\n", user_info.status);
+                    printf("User info:\n");
+                    printf("- Username: %s\n", user_info.username);
+                    printf("- IP: %s\n", user_info.ip);
+                    printf("- Status: %s\n", user_info.status);
 
-		// Actualizar la información del usuario local si el nombre de usuario coincide
-		if (strcmp(user_info.username, argv[1]) == 0) {
-		    strcpy(argv[1], user_info.username);
-		    strcpy(ip, user_info.ip);
-		    strcpy(status, user_info.status);
-		}
-	    } else {
-		printf("User not found.\n");
-	    }
-	    break;
-	}
-		break;
+                    // Actualizar la información del usuario local si el nombre de usuario coincide
+                    if (strcmp(user_info.username, argv[1]) == 0) {
+                        strcpy(argv[1], user_info.username);
+                        strcpy(ip, user_info.ip);
+                        strcpy(status, user_info.status);
+                    }
+                } else {
+                    printf("User not found.\n");
+                }
+                break;
+            }
 
             case 6: {
-                printf("Enter message to broadcast ('quit' to exit): ");
-                char buffer[BUFFER_SIZE];
-                fgets(buffer, BUFFER_SIZE, stdin);
-                buffer[strcspn(buffer, "\n")] = 0;
+                int submenu_option;
+                do {
+                    displayBroadcastMenu();
+                    scanf("%d", &submenu_option);
+                    getchar();
 
-                if (strcmp(buffer, "quit") == 0) {
-                    break;
-                }
+                    switch (submenu_option) {
+                        case 1: {
+			    // Solicitar al servidor los mensajes de broadcast
+			    printf("Mensajes de broadcast:\n");
+			    send(sock, &option, sizeof(int), 0);
 
-                send(sock, &option, sizeof(int), 0);
-                send(sock, buffer, strlen(buffer), 0);
+			    char broadcast_message[BUFFER_SIZE];
+			    while (1) {
+				// Recibir los mensajes de broadcast del servidor
+				ssize_t bytes_received = recv(sock, broadcast_message, BUFFER_SIZE, 0);
+				if (bytes_received <= 0) {
+				    // Si no se reciben más datos, se ha terminado la transmisión
+				    printf("Fin de los mensajes de broadcast.\n");
+				    break;
+				} else if (strcmp(broadcast_message, "###END_BROADCAST_MESSAGES###") == 0) {
+				    // Si se recibe la marca de fin de los mensajes, salir del bucle
+				    printf("Fin de los mensajes de broadcast.\n");
+				    break;
+				}
+				printf("- %s\n", broadcast_message);
+			    }
+			    break;
+			}
+
+                        case 2: {
+                            // Enviar mensaje al broadcast
+                            printf("Enter message to broadcast ('quit' to exit): ");
+                            char buffer[BUFFER_SIZE];
+                            fgets(buffer, BUFFER_SIZE, stdin);
+                            buffer[strcspn(buffer, "\n")] = '\0';
+
+                            if (strcmp(buffer, "quit") == 0) {
+                                break;
+                            }
+
+                            send(sock, &option, sizeof(int), 0);
+                            send(sock, buffer, strlen(buffer), 0);
+                            break;
+                        }
+
+                        case 3:
+                            break;
+
+                        default:
+                            printf("Opción no válida. Por favor, intenta de nuevo.\n");
+                    }
+                } while (submenu_option != 3);
                 break;
             }
 
@@ -208,8 +255,9 @@ int main(int argc, char *argv[]) {
                 printf("3. Cambiar de estado\n");
                 printf("4. Listar los usuarios conectados\n");
                 printf("5. Obtener información de un usuario\n");
-                printf("6. Ayuda\n");
-                printf("7. Salir\n");
+                printf("6. Chatear grupalmente\n");
+                printf("7. Ayuda\n");
+                printf("8. Salir\n");
                 break;
 
             case 8:
@@ -224,4 +272,3 @@ int main(int argc, char *argv[]) {
 
     return 0;
 }
-
