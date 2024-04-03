@@ -14,13 +14,13 @@ typedef struct {
 } UserInfo;
 
 void displayMenu() {
-    printf("\n Menu:\n");
-    printf("1. Broadcast\n");
+    printf("Menu:\n");
+    printf("1. Registrar\n");
     printf("2. Enviar mensaje privado\n");
     printf("3. Cambiar de estado\n");
-    printf("4. Ver usuarios online\n");
+    printf("4. Listar los usuarios conectados\n");
     printf("5. Obtener información de un usuario\n");
-    printf("6. Registrar\n");
+    printf("6. Broadcast\n");
     printf("7. Ayuda\n");
     printf("8. Salir\n");
     printf("Elige una opción: ");
@@ -54,7 +54,7 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
-    printf("[+]TCP server socket creada.\n");
+    printf("[+]TCP server socket created.\n");
 
     memset(&addr, '\0', sizeof(addr));
     addr.sin_family = AF_INET;
@@ -62,10 +62,10 @@ int main(int argc, char *argv[]) {
     addr.sin_addr.s_addr = inet_addr(ip);
 
     if (connect(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-        perror("Conexión fallida");
+        perror("Connection failed");
         exit(1);
     }
-    printf("Conectado al servidor\n");
+    printf("Connected to the server.\n");
 
     while (1) {
         displayMenu();
@@ -75,7 +75,7 @@ int main(int argc, char *argv[]) {
         getchar();
 
         switch (option) {
-            case 6:
+            case 1:
                 send(sock, &option, sizeof(int), 0);
                 send(sock, username, strlen(username), 0);
 
@@ -90,14 +90,14 @@ int main(int argc, char *argv[]) {
                 send(sock, &option, sizeof(int), 0);
 
                 char recipient_username[MAX_USERNAME_LENGTH];
-                printf("Ingresa el usuario que recibirá el mensaje: ");
+                printf("Enter recipient username: ");
                 fgets(recipient_username, MAX_USERNAME_LENGTH, stdin);
                 recipient_username[strcspn(recipient_username, "\n")] = '\0';
 
                 send(sock, recipient_username, strlen(recipient_username), 0);
 
                 char message[BUFFER_SIZE];
-                printf("Ingresa lo que contiene el mensaje: ");
+                printf("Enter message to send: ");
                 fgets(message, BUFFER_SIZE, stdin);
                 message[strcspn(message, "\n")] = '\0';
                 send(sock, message, strlen(message), 0);
@@ -111,7 +111,7 @@ int main(int argc, char *argv[]) {
                 printf("1. ACTIVO\n");
                 printf("2. OCUPADO\n");
                 printf("3. INACTIVO\n");
-                printf("Ingresa la opción que representa el nuevo estado: ");
+                printf("Ingresa el número de tu nuevo estado: ");
 
                 int choice;
                 scanf("%d", &choice);
@@ -147,13 +147,13 @@ int main(int argc, char *argv[]) {
                 int num_users;
                 recv(sock, &num_users, sizeof(int), 0);
 
-                printf("Usuarios conectados:\n");
+                printf("Connected users:\n");
                 for (int i = 0; i < num_users; i++) {
                     char username [50];
                     char status [20];
 		    recv(sock, username, sizeof(username), 0);
 		    recv(sock, status, sizeof(status), 0);
-                    printf("- Usuario: %s | Status: %s\n", username, status);
+                    printf("- Username: %s | Status: %s\n", username, status);
                 }
                 break;
             }
@@ -162,7 +162,7 @@ int main(int argc, char *argv[]) {
                 send(sock, &option, sizeof(int), 0);
 
                 char target_username[MAX_USERNAME_LENGTH];
-                printf("Ingres el usuario que desea saber su información ");
+                printf("Enter username to get information: ");
                 fgets(target_username, MAX_USERNAME_LENGTH, stdin);
                 target_username[strcspn(target_username, "\n")] = '\0';
                 send(sock, target_username, strlen(target_username), 0);
@@ -174,8 +174,9 @@ int main(int argc, char *argv[]) {
                     UserInfo user_info;
                     recv(sock, &user_info, sizeof(UserInfo), 0);
 
-                    printf("Informacón del usuario:\n");
-                    printf("- Usuario: %s\n", user_info.username);
+                    printf("User info:\n");
+                    printf("- Username: %s\n", user_info.username);
+                    printf("- IP: %s\n", user_info.ip);
                     printf("- Status: %s\n", user_info.status);
 
                     // Actualizar la información del usuario local si el nombre de usuario coincide
@@ -185,12 +186,12 @@ int main(int argc, char *argv[]) {
                         strcpy(status, user_info.status);
                     }
                 } else {
-                    printf("Usuario no encontrado.\n");
+                    printf("User not found.\n");
                 }
                 break;
             }
 
-            case 1: {
+            case 6: {
                 int submenu_option;
                 do {
                     displayBroadcastMenu();
@@ -223,7 +224,7 @@ int main(int argc, char *argv[]) {
 
                         case 2: {
                             // Enviar mensaje al broadcast
-                            printf("Ingresa el mensaje del broadcast (Escribe 'quit ' para salir: ");
+                            printf("Enter message to broadcast ('quit' to exit): ");
                             char buffer[BUFFER_SIZE];
                             fgets(buffer, BUFFER_SIZE, stdin);
                             buffer[strcspn(buffer, "\n")] = '\0';
@@ -256,7 +257,6 @@ int main(int argc, char *argv[]) {
                 printf("18.221.157.193\n");
                 printf("Puerto para que los demas grupos se conecten\n");
                 printf("8888\n");
-                break;
 
             case 8:
                 printf("Saliendo...\n");

@@ -62,6 +62,8 @@ void *manejar_cliente(void *arg) {
 
     // Manejar la solicitud del cliente
     manejar_solicitud(client_socket, option);
+    printf("Cliente desconectado \n");
+
     close(client_socket);
     pthread_exit(NULL);
 }
@@ -72,7 +74,7 @@ void manejar_solicitud(int client_socket, int option) {
     char message[BUFFER_SIZE];
 
     switch (option) {
-        case 6: // Registro de Usuarios
+        case 1: // Registro de Usuarios
             {
                 char username[50], ip[INET_ADDRSTRLEN];
                 // Recibir los datos de registro del cliente
@@ -110,7 +112,7 @@ void manejar_solicitud(int client_socket, int option) {
                 enviar_mensaje(recipient, message_text, client_socket);
 
 
-                printf("Mensaje recibido de %s: %s\n", server.clients[sender_index].username, message_text);
+                printf("Mensaje privado recibido de %s: %s\n", server.clients[sender_index].username, message_text);
             }
             break;
         case 3: // Cambio de Estado
@@ -142,7 +144,7 @@ void manejar_solicitud(int client_socket, int option) {
                 enviar_info_usuario(client_socket, username);
             }
             break;
-        case 1: // Mensaje de broadcast
+        case 6: // Mensaje de broadcast
             {
                 char broadcast_message[BUFFER_SIZE];
                 if (recv(client_socket, broadcast_message, sizeof(broadcast_message), 0) <= 0) {
@@ -205,7 +207,8 @@ void registrar_usuario(int client_socket, char *username, char *ip) {
     code = 200;
     sprintf(message, "Usuario '%s' registrado con éxito", username);
     enviar_respuesta(client_socket, 1, code, message);
-    printf("Usuario '%s' registrado con éxito\n", username);
+    printf("Usuario '%s' se ha conectado.\n", username);
+
     pthread_mutex_unlock(&server.mutex);
 }
 
@@ -229,7 +232,7 @@ void cambiar_estado(int client_socket, const char *new_status) {
     for (int i = 0; i < server.client_count; i++) {
         if (server.clients[i].socket == client_socket) {
             strcpy(server.clients[i].status, new_status);
-            enviar_respuesta_simple(client_socket, "Status actualizado con éxito.");
+            enviar_respuesta_simple(client_socket, "Estado actualizado con éxito.");
             break;
         }
     }
@@ -272,7 +275,7 @@ void enviar_mensaje(char *recipient_username, char *message, int sender_socket) 
     }
 
     if (recipient_index == -1) {
-        printf("El usuario %s no se encuentra conectado.\n", recipient_username);
+        printf("El usuario %s no está conectado.\n", recipient_username);
         pthread_mutex_unlock(&server.mutex);
         return;
     }
@@ -286,7 +289,7 @@ void enviar_mensaje(char *recipient_username, char *message, int sender_socket) 
     recipient_found = 1;
 
     if (recipient_found) {
-        printf("Mensaje enviado de %s (%s) a %s: %s\n", sender_username, sender_ip, recipient_username, message);
+        printf("Mensaje privado enviado de %s (%s) a %s: %s\n", sender_username, sender_ip, recipient_username, message);
     }
 
     pthread_mutex_unlock(&server.mutex);
@@ -373,7 +376,7 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    printf("Servidor corriendo en el puerto %d...\n", port);
+    printf("Servidor escuchando en el puerto %d...\n", port);
 
     // Inicializar la estructura del servidor
     server.client_count = 0;
