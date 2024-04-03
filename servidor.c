@@ -62,7 +62,6 @@ void *manejar_cliente(void *arg) {
 
     // Manejar la solicitud del cliente
     manejar_solicitud(client_socket, option);
-
     close(client_socket);
     pthread_exit(NULL);
 }
@@ -206,7 +205,7 @@ void registrar_usuario(int client_socket, char *username, char *ip) {
     code = 200;
     sprintf(message, "Usuario '%s' registrado con éxito", username);
     enviar_respuesta(client_socket, 1, code, message);
-
+    printf("Usuario '%s' registrado con éxito\n", username);
     pthread_mutex_unlock(&server.mutex);
 }
 
