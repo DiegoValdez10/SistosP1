@@ -5,215 +5,164 @@
 #include <pthread.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 
 #define MAX_CLIENTS 100
 #define BUFFER_SIZE 1024
+#define MAX_USERNAME_LEN 50
 #define DEFAULT_PORT 8888
-#define MAX_USERNAME_LENGHT 100
 
-// Estructura para representar a un cliente
 typedef struct {
     int socket;
-    char username[50];
+    char username[MAX_USERNAME_LEN];
     char ip[INET_ADDRSTRLEN];
     char status[20];
+    char message[BUFFER_SIZE];
 } Client;
 
-// Estructura para almacenar la información del servidor
 typedef struct {
     Client clients[MAX_CLIENTS];
     int client_count;
     pthread_mutex_t mutex;
-} ServerInfo;
+    char broadcast_messages[BUFFER_SIZE * MAX_CLIENTS];
+    int broadcast_message_count;
+    
+} Server;
 
-ServerInfo server;
+Server server;
 
-// Arreglo para mapear los descriptores de socket a los índices de la estructura Client
-int client_sockets[MAX_CLIENTS];
+void *handle_client(void *arg);
+void handle_request(int client_socket, int option);
+void register_user(int client_socket, char *username, char *ip);
+void send_connected_users(int client_socket);
+void change_status(int client_socket, const char *new_status);
+void send_private_message(char *recipient_username, char *message, int sender_socket);
+void send_user_info(int client_socket, char *username);
+void send_response(int client_socket, int option, int code, char *message);
+void broadcast_message(char *message, int sender_socket);
+void send_broadcast_messages(int client_socket);
 
-// Lista para almacenar mensajes de broadcast
-char broadcast_messages[MAX_CLIENTS][BUFFER_SIZE];
-int broadcast_message_count = 0;
-
-// Prototipos de funciones
-void *manejar_cliente(void *arg);
-void manejar_solicitud(int client_socket, int option);
-void registrar_usuario(int client_socket, char *username, char *ip);
-void enviar_usuarios_conectados(int client_socket);
-void cambiar_estado(int client_socket, const char *new_status);
-void enviar_mensaje(char *recipient_username, char *message, int sender_socket);
-void enviar_info_usuario(int client_socket, char *username);
-void enviar_respuesta(int client_socket, int option, int code, char *message);
-void mensaje_broadcast(char *message, int sender_socket);
-void enviar_respuesta_simple(int client_socket, const char *message);
-void enviar_broadcast_messages(int client_socket);
-
-// Función para manejar las conexiones de los clientes
-void *manejar_cliente(void *arg) {
+void *handle_client(void *arg) {
     int client_socket = *((int *)arg);
     int option;
+    char message[BUFFER_SIZE];
 
-    // Leer la opción del cliente
-    if (recv(client_socket, &option, sizeof(int), 0) <= 0) {
-        perror("Error al recibir la opción del cliente");
-        close(client_socket);
-        pthread_exit(NULL);
-    }
-
-    // Manejar la solicitud del cliente
-    manejar_solicitud(client_socket, option);
-    printf("Cliente desconectado \n");
-
+if (recv(client_socket, message, sizeof(message), 0) <= 0) {
+    perror("Error receiving broadcast message from client");
+    close(client_socket);
+    pthread_exit(NULL);
+}
+    handle_request(client_socket, option);
     close(client_socket);
     pthread_exit(NULL);
 }
 
-// Función para manejar las solicitudes de los clientes
-void manejar_solicitud(int client_socket, int option) {
+void handle_request(int client_socket, int option) {
     int code;
     char message[BUFFER_SIZE];
 
     switch (option) {
-        case 1: // Registro de Usuarios
-            {
-                char username[50], ip[INET_ADDRSTRLEN];
-                // Recibir los datos de registro del cliente
-                if (recv(client_socket, &username, sizeof(username), 0) <= 0 || recv(client_socket, &ip, sizeof(ip), 0) <= 0) {
-                    perror("Error al recibir los datos de registro del cliente");
-                    close(client_socket);
-                    pthread_exit(NULL);
-                }
-                registrar_usuario(client_socket, username, ip);
+        case 1: {
+            char username[MAX_USERNAME_LEN], ip[INET_ADDRSTRLEN];
+            if (recv(client_socket, username, sizeof(username), 0) <= 0 ||
+                recv(client_socket, ip, sizeof(ip), 0) <= 0) {
+                perror("Error receiving registration data from client");
+                close(client_socket);
+                pthread_exit(NULL);
             }
+            register_user(client_socket, username, ip);
             break;
-        case 2: // Usuarios Conectados
-            {
-                char recipient[50], message_text[BUFFER_SIZE];
-                if (recv(client_socket, recipient, sizeof(recipient), 0) <= 0 || recv(client_socket, message_text, sizeof(message_text), 0) <= 0) {
-                    perror("Error receiving message data from client");
-                    close(client_socket);
-                    pthread_exit(NULL);
-                }
-
-                int sender_index = -1;
-                for (int i = 0; i < server.client_count; i++) {
-                    if (server.clients[i].socket == client_socket) {
-                        sender_index = i;
-                        break;
-                    }
-                }
-
-                if (sender_index == -1) {
-                    perror("Error: Sender not found");
-                    close(client_socket);
-                    pthread_exit(NULL);
-                }
-
-                enviar_mensaje(recipient, message_text, client_socket);
-
-
-                printf("Mensaje privado recibido de %s: %s\n", server.clients[sender_index].username, message_text);
+        }
+        case 2: {
+            char recipient[MAX_USERNAME_LEN], message_text[BUFFER_SIZE];
+            if (recv(client_socket, recipient, sizeof(recipient), 0) <= 0 ||
+                recv(client_socket, message_text, sizeof(message_text), 0) <= 0) {
+                perror("Error receiving message data from client");
+                close(client_socket);
+                pthread_exit(NULL);
             }
+            send_private_message(recipient, message_text, client_socket);
             break;
-        case 3: // Cambio de Estado
-            {
-                char status[20];
-                if (recv(client_socket, &status, sizeof(status), 0) <= 0) {
-                    perror("Error receiving status change data from client");
-                    close(client_socket);
-                    pthread_exit(NULL);
-                }
-                
-                cambiar_estado(client_socket, status);
+        }
+        case 3: {
+            char status[20];
+            if (recv(client_socket, status, sizeof(status), 0) <= 0) {
+                perror("Error receiving status change data from client");
+                close(client_socket);
+                pthread_exit(NULL);
             }
+            change_status(client_socket, status);
             break;
+        }
+        case 4:
+            send_connected_users(client_socket);
+            break;
+        case 5: {
+            char username[MAX_USERNAME_LEN];
+            if (recv(client_socket, username, sizeof(username), 0) <= 0) {
+                perror("Error receiving username from client");
+                close(client_socket);
+                pthread_exit(NULL);
+            }
+            send_user_info(client_socket, username);
+            break;
+        }
+case 6: {
+    char broadcast_msg[BUFFER_SIZE]; // Renamed variable to avoid conflict
+    if (recv(client_socket, broadcast_msg, sizeof(broadcast_msg), 0) <= 0) {
+        perror("Error receiving broadcast message from client");
+        close(client_socket);
+        pthread_exit(NULL);
+    }
+    broadcast_message(broadcast_msg, client_socket); // Using the function, not the array
+    break;
+}
 
-        case 4: // Listar Usuarios Conectados
-            {
-                enviar_usuarios_conectados(client_socket);
-            }
+
+        case 7: {
+            send_broadcast_messages(client_socket);
             break;
-        case 5: // Información de un usuario en particular
-            {
-                char username[50];
-                if (recv(client_socket, &username, sizeof(username), 0) <= 0) {
-                    perror("Error receiving username from client");
-                    close(client_socket);
-                    pthread_exit(NULL);
-                }
-                enviar_info_usuario(client_socket, username);
-            }
-            break;
-        case 6: // Mensaje de broadcast
-            {
-                char broadcast_message[BUFFER_SIZE];
-                if (recv(client_socket, broadcast_message, sizeof(broadcast_message), 0) <= 0) {
-                    perror("Error receiving broadcast message from client");
-                    close(client_socket);
-                    pthread_exit(NULL);
-                }
-                
-                mensaje_broadcast(broadcast_message, client_socket);
-            }
-            break;
+        }
         default:
-            // Opción no válida
             code = 500;
-            sprintf(message, "Error: Opción inválida");
-            enviar_respuesta(client_socket, option, code, message);
+            sprintf(message, "Error: Invalid option");
+            send_response(client_socket, option, code, message);
             break;
     }
 }
 
-// Función para enviar todos los mensajes de broadcast a un cliente
-void enviar_broadcast_messages(int client_socket) {
-    for (int i = 0; i < broadcast_message_count; i++) {
-        send(client_socket, broadcast_messages[i], strlen(broadcast_messages[i]), 0);
-    }
-    // Enviamos un mensaje especial indicando que se han enviado todos los mensajes de broadcast
-    send(client_socket, "###END_BROADCAST_MESSAGES###", strlen("###END_BROADCAST_MESSAGES###"), 0);
-}
-
-// Función para registrar a un nuevo usuario
-void registrar_usuario(int client_socket, char *username, char *ip) {
+void register_user(int client_socket, char *username, char *ip) {
     int code;
     char message[BUFFER_SIZE];
 
-    // Bloquear el acceso a la estructura del servidor para evitar condiciones de carrera
     pthread_mutex_lock(&server.mutex);
 
-    // Verificar si el usuario ya está registrado
-    int index = -1;
     for (int i = 0; i < server.client_count; i++) {
         if (strcmp(server.clients[i].username, username) == 0) {
-            code = 500; // Usuario ya registrado
-            sprintf(message, "Error: El usuario '%s' ya existe", username);
-            enviar_respuesta(client_socket, 1, code, message);
+            code = 500;
+            sprintf(message, "Error: Username '%s' already exists", username);
+            send_response(client_socket, 1, code, message);
             pthread_mutex_unlock(&server.mutex);
             return;
         }
     }
 
-    // Registrar al nuevo usuario
-    index = server.client_count;
+    int index = server.client_count;
     strcpy(server.clients[index].username, username);
     strcpy(server.clients[index].ip, ip);
-    strcpy(server.clients[index].status, "ACTIVO");
+    strcpy(server.clients[index].status, "ONLINE");
     server.clients[index].socket = client_socket;
-    client_sockets[index]= client_socket; // Almacenar el descriptor de socket
     server.client_count++;
 
-    // Enviar respuesta exitosa al cliente
     code = 200;
-    sprintf(message, "Usuario '%s' registrado con éxito", username);
-    enviar_respuesta(client_socket, 1, code, message);
-    printf("Usuario '%s' se ha conectado.\n", username);
+    sprintf(message, "User '%s' registered successfully", username);
+    send_response(client_socket, 1, code, message);
+    printf("User '%s' registered successfully\n", username);
 
     pthread_mutex_unlock(&server.mutex);
 }
 
-// Función para enviar la lista de usuarios conectados al cliente
-void enviar_usuarios_conectados(int client_socket) {
+void send_connected_users(int client_socket) {
     int count = server.client_count;
     send(client_socket, &count, sizeof(int), 0);
     for (int i = 0; i < server.client_count; i++) {
@@ -222,124 +171,103 @@ void enviar_usuarios_conectados(int client_socket) {
     }
 }
 
-void enviar_respuesta_simple(int client_socket, const char *message) {
-    send(client_socket, message, strlen(message) + 1, 0); 
-}
-
-// Función para cambiar el estado de un usuario
-void cambiar_estado(int client_socket, const char *new_status) {
+void change_status(int client_socket, const char *new_status) {
     pthread_mutex_lock(&server.mutex);
+
     for (int i = 0; i < server.client_count; i++) {
         if (server.clients[i].socket == client_socket) {
             strcpy(server.clients[i].status, new_status);
-            enviar_respuesta_simple(client_socket, "Estado actualizado con éxito.");
             break;
         }
     }
+
     pthread_mutex_unlock(&server.mutex);
 }
 
-// Función para enviar un mensaje a un usuario
-void enviar_mensaje(char *recipient_username, char *message, int sender_socket) {
+void send_private_message(char *recipient_username, char *message, int sender_socket) {
     pthread_mutex_lock(&server.mutex);
 
-    int recipient_found = 0;
-    int sender_index = -1;
     int recipient_index = -1;
+    int sender_index = -1;
 
-    // Buscar el índice del remitente
     for (int i = 0; i < server.client_count; i++) {
         if (server.clients[i].socket == sender_socket) {
             sender_index = i;
-            break;
-        }
-    }
-
-    if (sender_index == -1) {
-        perror("Error: Sender not found");
-        pthread_mutex_unlock(&server.mutex);
-        return;
-    }
-
-    char sender_username[50];
-    char sender_ip[INET_ADDRSTRLEN];
-    strcpy(sender_username, server.clients[sender_index].username);
-    strcpy(sender_ip, server.clients[sender_index].ip);
-
-    // Buscar el índice del receptor
-    for (int i = 0; i < server.client_count; i++) {
-        if (strcmp(server.clients[i].username, recipient_username) == 0) {
+        } else if (strcmp(server.clients[i].username, recipient_username) == 0) {
             recipient_index = i;
-            break;
         }
     }
 
     if (recipient_index == -1) {
-        printf("El usuario %s no está conectado.\n", recipient_username);
+        printf("User '%s' not found\n", recipient_username);
         pthread_mutex_unlock(&server.mutex);
         return;
     }
 
-    int recipient_socket = client_sockets[recipient_index]; // Obtener el socket del destinatario
+    int recipient_socket = server.clients[recipient_index].socket;
+    char sender_username[MAX_USERNAME_LEN];
+    strcpy(sender_username, server.clients[sender_index].username);
 
-    // Enviar el nombre de usuario del remitente y el mensaje al receptor
     send(recipient_socket, sender_username, strlen(sender_username), 0);
     send(recipient_socket, message, strlen(message), 0);
 
-    recipient_found = 1;
-
-    if (recipient_found) {
-        printf("Mensaje privado enviado de %s (%s) a %s: %s\n", sender_username, sender_ip, recipient_username, message);
-    }
+    printf("Message sent from '%s' to '%s': %s\n", sender_username,recipient_username, message);
 
     pthread_mutex_unlock(&server.mutex);
 }
 
-// Función para enviar la información de un usuario al cliente
-void enviar_info_usuario(int client_socket, char *username) {
+void send_user_info(int client_socket, char *username) {
     pthread_mutex_lock(&server.mutex);
-    int user_found = 0; 
+    int user_found = 0;
 
     for (int i = 0; i < server.client_count; i++) {
         if (strcmp(server.clients[i].username, username) == 0) {
-            user_found = 1; 
+            user_found = 1;
             send(client_socket, &user_found, sizeof(int), 0);
-            
-            send(client_socket, &server.clients[i].username, sizeof(server.clients[i].username), 0);
-            send(client_socket, &server.clients[i].ip, sizeof(server.clients[i].ip), 0);
-            send(client_socket, &server.clients[i].status, sizeof(server.clients[i].status), 0);
+            send(client_socket, server.clients[i].username, sizeof(server.clients[i].username), 0);
+            send(client_socket, server.clients[i].ip, sizeof(server.clients[i].ip), 0);
+            send(client_socket, server.clients[i].status, sizeof(server.clients[i].status), 0);
             break;
         }
     }
 
     if (!user_found) {
-        send(client_socket, &user_found, sizeof(int), 0);  
+        user_found = 0;
+        send(client_socket, &user_found, sizeof(int), 0);
     }
 
     pthread_mutex_unlock(&server.mutex);
 }
 
-// Función para enviar una respuesta al cliente
-void enviar_respuesta(int client_socket, int option, int code, char *message) {
+void send_response(int client_socket, int option, int code, char *message) {
     send(client_socket, &option, sizeof(int), 0);
     send(client_socket, &code, sizeof(int), 0);
     send(client_socket, message, strlen(message), 0);
 }
 
-void mensaje_broadcast(char *message, int sender_socket) {
+void broadcast_message(char *message, int sender_socket) {
     pthread_mutex_lock(&server.mutex);
 
-    printf("Mensaje broadcast recibido: %s\n", message);
+    printf("Broadcast message received: %s\n", message);
 
-    // Almacenamos el mensaje de broadcast en la lista
-    strcpy(broadcast_messages[broadcast_message_count], message);
-    broadcast_message_count++;
+    int len = strlen(message);
+    memcpy(server.broadcast_messages + server.broadcast_message_count, message, len + 1);
+    server.broadcast_message_count += len + 1;
 
     for (int i = 0; i < server.client_count; i++) {
         if (server.clients[i].socket != sender_socket) {
-            send(server.clients[i].socket, message, strlen(message), 0);
+            send(server.clients[i].socket, message, len, 0);
         }
     }
+
+    pthread_mutex_unlock(&server.mutex);
+}
+
+void send_broadcast_messages(int client_socket) {
+    pthread_mutex_lock(&server.mutex);
+
+    send(client_socket, server.broadcast_messages, server.broadcast_message_count, 0);
+    send(client_socket, "###END_BROADCAST_MESSAGES###", strlen("###END_BROADCAST_MESSAGES###"), 0);
 
     pthread_mutex_unlock(&server.mutex);
 }
@@ -350,48 +278,41 @@ int main(int argc, char *argv[]) {
     socklen_t client_len = sizeof(client_addr);
     pthread_t tid;
 
-    // Verificar si se proporcionó un puerto como argumento, de lo contrario, usar el puerto predeterminado
     port = (argc < 2) ? DEFAULT_PORT : atoi(argv[1]);
 
-    // Crear socket del servidor
     if ((server_socket = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
-        perror("Error en la creación del socket");
+        perror("Error creating server socket");
         exit(EXIT_FAILURE);
     }
 
-    // Configurar la dirección del servidor
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = INADDR_ANY;
     server_addr.sin_port = htons(port);
 
-    // Enlazar el socket del servidor
     if (bind(server_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
-        perror("Error en el enlace del socket");
+        perror("Error binding server socket");
         exit(EXIT_FAILURE);
     }
 
-    // Escuchar por conexiones entrantes
     if (listen(server_socket, 5) < 0) {
-        perror("Error en la escucha del socket");
+        perror("Error listening on server socket");
         exit(EXIT_FAILURE);
     }
 
-    printf("Servidor escuchando en el puerto %d...\n", port);
+    printf("Server running on port %d...\n", port);
 
-    // Inicializar la estructura del servidor
     server.client_count = 0;
     pthread_mutex_init(&server.mutex, NULL);
+    server.broadcast_message_count = 0;
 
     while (1) {
-        // Aceptar la conexión entrante
         if ((client_socket = accept(server_socket, (struct sockaddr *)&client_addr, &client_len)) < 0) {
-            perror("Error al aceptar la conexión");
+            perror("Error accepting client connection");
             exit(EXIT_FAILURE);
         }
 
-        // Crear un hilo para manejar al cliente
-        if (pthread_create(&tid, NULL, manejar_cliente, &client_socket) != 0) {
-            perror("Error en la creación del hilo");
+        if (pthread_create(&tid, NULL, handle_client, &client_socket) != 0) {
+            perror("Error creating client thread");
             exit(EXIT_FAILURE);
         }
     }

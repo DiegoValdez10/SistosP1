@@ -2,16 +2,34 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/socket.h>
 #include <arpa/inet.h>
+#include <pthread.h>
 
+#define MAX_CLIENTS 10
+#define MAX_USERNAME_LEN 20
+#define MAX_MESSAGE_LEN 256
 #define BUFFER_SIZE 1024
-#define MAX_USERNAME_LENGTH 50
 
 typedef struct {
-    char username[MAX_USERNAME_LENGTH];
+    int sockfd;
+    char username[MAX_USERNAME_LEN];
+    char status[20];
+} Client;
+typedef struct {
+    char username[MAX_USERNAME_LEN];
     char ip[INET_ADDRSTRLEN];
     char status[20];
 } UserInfo;
+
+Client clients[MAX_CLIENTS];
+int num_clients = 0;
+
+pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+void *handle_client(void *arg);
+void broadcast_message(const char *message, const char *sender);
+void process_command(int client_index, char *command);
 
 void displayMenu() {
     printf("Menu:\n");
@@ -42,7 +60,7 @@ int main(int argc, char *argv[]) {
 
     char *username = argv[1];
     char *ip = argv[2];
-    char status[20]; // Declarar la variable status
+    char status[20];
     int port = atoi(argv[3]);
 
     int sock;
@@ -89,9 +107,9 @@ int main(int argc, char *argv[]) {
             case 2: {
                 send(sock, &option, sizeof(int), 0);
 
-                char recipient_username[MAX_USERNAME_LENGTH];
+                char recipient_username[MAX_USERNAME_LEN];
                 printf("Enter recipient username: ");
-                fgets(recipient_username, MAX_USERNAME_LENGTH, stdin);
+                fgets(recipient_username, MAX_USERNAME_LEN, stdin);
                 recipient_username[strcspn(recipient_username, "\n")] = '\0';
 
                 send(sock, recipient_username, strlen(recipient_username), 0);
@@ -151,8 +169,8 @@ int main(int argc, char *argv[]) {
                 for (int i = 0; i < num_users; i++) {
                     char username [50];
                     char status [20];
-		    recv(sock, username, sizeof(username), 0);
-		    recv(sock, status, sizeof(status), 0);
+                    recv(sock, username, sizeof(username), 0);
+                    recv(sock, status, sizeof(status), 0);
                     printf("- Username: %s | Status: %s\n", username, status);
                 }
                 break;
@@ -161,9 +179,9 @@ int main(int argc, char *argv[]) {
             case 5: {
                 send(sock, &option, sizeof(int), 0);
 
-                char target_username[MAX_USERNAME_LENGTH];
+                char target_username[MAX_USERNAME_LEN];
                 printf("Enter username to get information: ");
-                fgets(target_username, MAX_USERNAME_LENGTH, stdin);
+                fgets(target_username, MAX_USERNAME_LEN, stdin);
                 target_username[strcspn(target_username, "\n")] = '\0';
                 send(sock, target_username, strlen(target_username), 0);
 
@@ -200,27 +218,27 @@ int main(int argc, char *argv[]) {
 
                     switch (submenu_option) {
                         case 1: {
-			    // Solicitar al servidor los mensajes de broadcast
-			    printf("Mensajes de broadcast:\n");
-			    send(sock, &option, sizeof(int), 0);
+                            // Solicitar al servidor los mensajes de broadcast
+                            printf("Mensajes de broadcast:\n");
+                            send(sock, &option, sizeof(int), 0);
 
-			    char broadcast_message[BUFFER_SIZE];
-			    while (1) {
-				// Recibir los mensajes de broadcast del servidor
-				ssize_t bytes_received = recv(sock, broadcast_message, BUFFER_SIZE, 0);
-				if (bytes_received <= 0) {
-				    // Si no se reciben más datos, se ha terminado la transmisión
-				    printf("Fin de los mensajes de broadcast.\n");
-				    break;
-				} else if (strcmp(broadcast_message, "###END_BROADCAST_MESSAGES###") == 0) {
-				    // Si se recibe la marca de fin de los mensajes, salir del bucle
-				    printf("Fin de los mensajes de broadcast.\n");
-				    break;
-				}
-				printf("- %s\n", broadcast_message);
-			    }
-			    break;
-			}
+                            char broadcast_message[BUFFER_SIZE];
+                            while (1) {
+                                // Recibir los mensajes de broadcast del servidor
+                                ssize_t bytes_received = recv(sock, broadcast_message, BUFFER_SIZE, 0);
+                                if (bytes_received <= 0) {
+                                    // Si no se reciben más datos, se ha terminado la transmisión
+                                    printf("Fin de los mensajes de broadcast.\n");
+                                    break;
+                                } else if (strcmp(broadcast_message, "###END_BROADCAST_MESSAGES###") == 0) {
+                                    // Si se recibe la marca de fin de los mensajes, salir del bucle
+                                    printf("Fin de los mensajes de broadcast.\n");
+                                    break;
+                                }
+                                printf("- %s\n", broadcast_message);
+                            }
+                            break;
+                        }
 
                         case 2: {
                             // Enviar mensaje al broadcast
@@ -269,4 +287,17 @@ int main(int argc, char *argv[]) {
     }
 
     return 0;
+}
+
+void *handle_client(void *arg) {
+    // Esta función no se utiliza en el lado del cliente
+    return NULL;
+}
+
+void broadcast_message(const char *message, const char *sender) {
+    // Esta función no se utiliza en el lado del cliente
+}
+
+void process_command(int client_index, char *command) {
+    // Esta función no se utiliza en el lado del cliente
 }
